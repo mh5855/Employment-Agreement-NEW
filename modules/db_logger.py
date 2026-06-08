@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS sign_tokens (
     pdf_path       TEXT NOT NULL,
     created_at     TEXT NOT NULL,
     expires_at     TEXT NOT NULL,
+    sig_x           REAL    NOT NULL DEFAULT 680.0,
+    sig_y           REAL    NOT NULL DEFAULT 18.0,
+    sig_w           REAL    NOT NULL DEFAULT 80.0,
+    sig_h           REAL    NOT NULL DEFAULT 50.0,
     signed_at      TEXT,
     signed_pdf_path TEXT
 );
@@ -43,6 +47,13 @@ def _conn():
     try:
         con.executescript(_CREATE_SQL)   # 다중 구문 허용
         con.commit()
+        # 기존 sign_tokens 테이블 마이그레이션 (컬럼 없으면 추가)
+        for col, default in [("sig_x","680.0"),("sig_y","18.0"),("sig_w","80.0"),("sig_h","50.0")]:
+            try:
+                con.execute(f"ALTER TABLE sign_tokens ADD COLUMN {col} REAL NOT NULL DEFAULT {default}")
+                con.commit()
+            except Exception:
+                pass
         yield con
     finally:
         con.close()
@@ -110,16 +121,22 @@ def create_sign_token(
     email: str,
     pdf_path: str,
     expires_days: int = 14,
+    sig_x: float = 680.0,
+    sig_y: float = 18.0,
+    sig_w: float = 80.0,
+    sig_h: float = 50.0,
 ) -> None:
     now = datetime.now()
     expires = (now + __import__("datetime").timedelta(days=expires_days)).strftime("%Y-%m-%d %H:%M:%S")
     with _conn() as con:
         con.execute(
             """INSERT OR REPLACE INTO sign_tokens
-               (token, employee_id, employee_name, email, pdf_path, created_at, expires_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (token, employee_id, employee_name, email, pdf_path, created_at, expires_at,
+                sig_x, sig_y, sig_w, sig_h)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (token, employee_id, employee_name, email, pdf_path,
-             now.strftime("%Y-%m-%d %H:%M:%S"), expires),
+             now.strftime("%Y-%m-%d %H:%M:%S"), expires,
+             sig_x, sig_y, sig_w, sig_h),
         )
         con.commit()
 

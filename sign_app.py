@@ -168,6 +168,10 @@ if submit:
                 pdf_password=password_input,
                 signature_png_bytes=sig_png_bytes,
                 output_path=signed_path,
+                draw_x=float(token_info.get("sig_x", 680.0)),
+                draw_y=float(token_info.get("sig_y", 18.0)),
+                draw_w=float(token_info.get("sig_w", 80.0)),
+                draw_h=float(token_info.get("sig_h", 50.0)),
             )
 
             # 토큰 완료 처리

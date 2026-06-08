@@ -160,6 +160,42 @@ with tab_upload:
         if uploaded_pdf:
             st.success(f"✅ {uploaded_pdf.name}  ({uploaded_pdf.size:,} bytes)")
 
+        # ── 서명 위치 미리보기 ─────────────────────────────────────────────
+        if uploaded_pdf:
+            with st.expander("⚙️ 서명 위치 미리보기 / 조정 (기본값으로 마지막 페이지 자동 설정)"):
+                try:
+                    from modules.web_signer import render_page_with_sig_preview
+                    import io as _io
+
+                    pdf_preview_bytes = uploaded_pdf.getvalue()
+                    # 페이지 크기 먼저 가져오기
+                    _, _pw, _ph = render_page_with_sig_preview(pdf_preview_bytes, -1,
+                        st.session_state.get("u_sig_x", 680.0),
+                        st.session_state.get("u_sig_y", 18.0),
+                        st.session_state.get("u_sig_w", 80.0),
+                        st.session_state.get("u_sig_h", 50.0),
+                    )
+                    sl_col, pv_col = st.columns([1, 2])
+                    with sl_col:
+                        st.caption(f"페이지 크기: {_pw:.0f} × {_ph:.0f} pt")
+                        u_sig_x = st.slider("X 위치 (←→)", 0.0, float(_pw), st.session_state.get("u_sig_x", 680.0), step=1.0, key="u_sig_x")
+                        u_sig_y = st.slider("Y 위치 (↑↓, 하단 기준)", 0.0, float(_ph), st.session_state.get("u_sig_y", 18.0), step=1.0, key="u_sig_y")
+                        u_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("u_sig_w", 80.0), step=1.0, key="u_sig_w")
+                        u_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("u_sig_h", 50.0), step=1.0, key="u_sig_h")
+                        if st.button("기본값 초기화", key="u_sig_reset"):
+                            for k in ("u_sig_x","u_sig_y","u_sig_w","u_sig_h"):
+                                st.session_state.pop(k, None)
+                            st.rerun()
+                    with pv_col:
+                        preview_img, _, _ = render_page_with_sig_preview(
+                            pdf_preview_bytes, -1,
+                            u_sig_x, u_sig_y, u_sig_w, u_sig_h
+                        )
+                        if preview_img:
+                            st.image(preview_img, caption="서명 위치 미리보기 (빨간 박스)", use_container_width=True)
+                except Exception as _e:
+                    st.caption(f"미리보기 불가: {_e}")
+
         st.markdown("#### 2. 수신자 정보")
 
         recipient_name = st.text_input(
@@ -262,7 +298,13 @@ with tab_upload:
                         "성명":   recipient_name.strip(),
                         "이메일": recipient_email.strip(),
                     }
-                    token    = create_signing_token(emp_info, save_path)
+                    token    = create_signing_token(
+                        emp_info, save_path,
+                        sig_x=st.session_state.get("u_sig_x", 680.0),
+                        sig_y=st.session_state.get("u_sig_y", 18.0),
+                        sig_w=st.session_state.get("u_sig_w", 80.0),
+                        sig_h=st.session_state.get("u_sig_h", 50.0),
+                    )
                     sign_url = build_sign_url(token)
                     send_sign_request(emp_info, save_path, sign_url)
                     log_email_sent(emp_info, save_name, token)
@@ -308,6 +350,28 @@ with tab_bulk:
     )
 
     if bulk_files:
+        # ── 서명 위치 공통 설정 ────────────────────────────────────────────
+        with st.expander("⚙️ 서명 위치 설정 (전체 파일 공통 적용)"):
+            b_sl, b_pv = st.columns([1, 2])
+            with b_sl:
+                b_sig_x = st.slider("X 위치", 0.0, 900.0, st.session_state.get("b_sig_x", 680.0), step=1.0, key="b_sig_x")
+                b_sig_y = st.slider("Y 위치 (하단 기준)", 0.0, 400.0, st.session_state.get("b_sig_y", 18.0), step=1.0, key="b_sig_y")
+                b_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("b_sig_w", 80.0), step=1.0, key="b_sig_w")
+                b_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("b_sig_h", 50.0), step=1.0, key="b_sig_h")
+                st.caption("첫 번째 파일을 업로드하면 미리보기가 활성화됩니다.")
+                if bulk_files:
+                    try:
+                        from modules.web_signer import render_page_with_sig_preview
+                        bpv_bytes, bpw, bph = render_page_with_sig_preview(
+                            bulk_files[0].getvalue(), -1,
+                            b_sig_x, b_sig_y, b_sig_w, b_sig_h
+                        )
+                        if bpv_bytes:
+                            with b_pv:
+                                st.image(bpv_bytes, caption=f"첫 번째 파일 미리보기 (페이지: {bpw:.0f}×{bph:.0f}pt)", use_container_width=True)
+                    except Exception:
+                        pass
+
         st.markdown(f"**총 {len(bulk_files)}건** — 각 파일의 수신자 정보를 입력해 주세요.")
 
         bulk_rows = []
@@ -424,7 +488,13 @@ with tab_bulk:
                         "성명":   row["name"].strip(),
                         "이메일": row["email"].strip(),
                     }
-                    token    = create_signing_token(emp_info, save_path)
+                    token    = create_signing_token(
+                        emp_info, save_path,
+                        sig_x=st.session_state.get("b_sig_x", 680.0),
+                        sig_y=st.session_state.get("b_sig_y", 18.0),
+                        sig_w=st.session_state.get("b_sig_w", 80.0),
+                        sig_h=st.session_state.get("b_sig_h", 50.0),
+                    )
                     sign_url = build_sign_url(token)
                     send_sign_request(emp_info, save_path, sign_url)
                     log_email_sent(emp_info, save_name, token)

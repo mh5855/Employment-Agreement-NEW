@@ -12,7 +12,9 @@ from datetime import datetime
 
 
 # ── 토큰 생성 ──────────────────────────────────────────────────────────────────
-def create_signing_token(employee: dict, pdf_path: str) -> str:
+def create_signing_token(employee: dict, pdf_path: str,
+                         sig_x: float = 680.0, sig_y: float = 18.0,
+                         sig_w: float = 80.0, sig_h: float = 50.0) -> str:
     from modules.db_logger import create_sign_token
     token = str(uuid.uuid4())
     create_sign_token(
@@ -20,7 +22,8 @@ def create_signing_token(employee: dict, pdf_path: str) -> str:
         employee_id=employee["사번"],
         employee_name=employee["성명"],
         email=employee["이메일"],
-        pdf_path=os.path.abspath(pdf_path),   # 절대경로로 저장
+        pdf_path=os.path.abspath(pdf_path),
+        sig_x=sig_x, sig_y=sig_y, sig_w=sig_w, sig_h=sig_h,
     )
     return token
 
@@ -232,6 +235,10 @@ def embed_signature_and_finalize(
     pdf_password: str,
     signature_png_bytes: bytes,
     output_path: str,
+    draw_x: float = 680.0,
+    draw_y: float = 18.0,
+    draw_w: float = 80.0,
+    draw_h: float = 50.0,
 ) -> str:
     """
     1) AcroForm 필드 위치 탐색
@@ -256,12 +263,6 @@ def embed_signature_and_finalize(
             total_pages = len(pdf.pages)
             target = total_pages - 1  # 마지막 페이지
 
-            # 서명 삽입 좌표 (PDF pt, 좌하단 기준)
-            draw_x = 680.0
-            draw_y = 18.0
-            draw_w = 80.0
-            draw_h = 50.0
-
             # 이미지 삽입
             _embed_image_to_page(
                 pdf, target,
@@ -278,3 +279,69 @@ def embed_signature_and_finalize(
         raise ValueError("비밀번호가 올바르지 않습니다. 주민등록번호 뒷 7자리를 확인해주세요.")
 
     return output_path
+
+
+def render_page_with_sig_preview(
+    pdf_bytes: bytes,
+    page_idx: int = -1,
+    sig_x: float = 680.0,
+    sig_y: float = 18.0,
+    sig_w: float = 80.0,
+    sig_h: float = 50.0,
+    dpi: int = 100,
+) -> tuple:
+    """PDF 페이지를 이미지로 렌더링하고 서명 위치를 빨간 박스로 표시.
+    Returns: (img_bytes: bytes, page_w: float, page_h: float)
+    """
+    import io as _io
+    try:
+        import fitz
+    except ImportError:
+        return None, 595.0, 842.0
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    if page_idx < 0:
+        page_idx = len(doc) + page_idx
+    page_idx = max(0, min(page_idx, len(doc) - 1))
+    page = doc[page_idx]
+    page_w = page.rect.width
+    page_h = page.rect.height
+
+    scale = dpi / 72.0
+    mat = fitz.Matrix(scale, scale)
+    pix = page.get_pixmap(matrix=mat)
+    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    doc.close()
+
+    # PDF 좌표(좌하단 기준) → 이미지 좌표(좌상단 기준) 변환
+    img_x1 = sig_x * scale
+    img_y1 = (page_h - sig_y - sig_h) * scale
+    img_x2 = (sig_x + sig_w) * scale
+    img_y2 = (page_h - sig_y) * scale
+
+    # 범위 클램핑
+    img_x1 = max(0, img_x1)
+    img_y1 = max(0, img_y1)
+    img_x2 = min(pix.width, img_x2)
+    img_y2 = min(pix.height, img_y2)
+
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([img_x1, img_y1, img_x2, img_y2], outline=(220, 50, 50), width=3)
+    # 서명 영역 반투명 오버레이 (빨간색 10% 불투명)
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ov_draw = ImageDraw.Draw(overlay)
+    ov_draw.rectangle([img_x1, img_y1, img_x2, img_y2], fill=(220, 50, 50, 30))
+    img = img.convert("RGBA")
+    img = Image.alpha_composite(img, overlay).convert("RGB")
+
+    # 라벨 텍스트
+    draw2 = ImageDraw.Draw(img)
+    label_x = max(0, img_x1 + 3)
+    label_y = max(0, img_y1 + 3)
+    draw2.text((label_x, label_y), "✍ 서명", fill=(180, 30, 30))
+
+    buf = _io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), page_w, page_h
