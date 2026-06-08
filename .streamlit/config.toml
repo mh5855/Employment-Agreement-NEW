@@ -1,6 +1,10 @@
-[browser]
-gatherUsageStats = false
-
 [server]
 headless = true
-maxUploadSize = 50
+enableCORS = false
+enableXsrfProtection = false
+
+[theme]
+primaryColor = "#1B3A6B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F8FC"
+textColor = "#212121"
