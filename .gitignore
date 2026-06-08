@@ -1,0 +1,19 @@
+# 민감 정보 - 절대 업로드 금지
+.env
+credentials.json
+*.json
+
+# 생성된 PDF 및 DB
+output/
+email_log.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
