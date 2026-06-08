@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sign_tokens (
     sig_y           REAL    NOT NULL DEFAULT 18.0,
     sig_w           REAL    NOT NULL DEFAULT 80.0,
     sig_h           REAL    NOT NULL DEFAULT 50.0,
+    sig_page        INTEGER NOT NULL DEFAULT -1,
     signed_at      TEXT,
     signed_pdf_path TEXT
 );
@@ -48,9 +49,13 @@ def _conn():
         con.executescript(_CREATE_SQL)   # 다중 구문 허용
         con.commit()
         # 기존 sign_tokens 테이블 마이그레이션 (컬럼 없으면 추가)
-        for col, default in [("sig_x","680.0"),("sig_y","18.0"),("sig_w","80.0"),("sig_h","50.0")]:
+        for col, typ, default in [
+            ("sig_x","REAL","680.0"), ("sig_y","REAL","18.0"),
+            ("sig_w","REAL","80.0"), ("sig_h","REAL","50.0"),
+            ("sig_page","INTEGER","-1"),
+        ]:
             try:
-                con.execute(f"ALTER TABLE sign_tokens ADD COLUMN {col} REAL NOT NULL DEFAULT {default}")
+                con.execute(f"ALTER TABLE sign_tokens ADD COLUMN {col} {typ} NOT NULL DEFAULT {default}")
                 con.commit()
             except Exception:
                 pass
@@ -125,6 +130,7 @@ def create_sign_token(
     sig_y: float = 18.0,
     sig_w: float = 80.0,
     sig_h: float = 50.0,
+    sig_page: int = -1,
 ) -> None:
     now = datetime.now()
     expires = (now + __import__("datetime").timedelta(days=expires_days)).strftime("%Y-%m-%d %H:%M:%S")
@@ -132,11 +138,11 @@ def create_sign_token(
         con.execute(
             """INSERT OR REPLACE INTO sign_tokens
                (token, employee_id, employee_name, email, pdf_path, created_at, expires_at,
-                sig_x, sig_y, sig_w, sig_h)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                sig_x, sig_y, sig_w, sig_h, sig_page)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (token, employee_id, employee_name, email, pdf_path,
              now.strftime("%Y-%m-%d %H:%M:%S"), expires,
-             sig_x, sig_y, sig_w, sig_h),
+             sig_x, sig_y, sig_w, sig_h, sig_page),
         )
         con.commit()
 

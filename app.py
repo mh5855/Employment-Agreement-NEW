@@ -121,6 +121,7 @@ if _sign_token:
                     draw_y=float(_ti.get("sig_y", 18.0)),
                     draw_w=float(_ti.get("sig_w", 80.0)),
                     draw_h=float(_ti.get("sig_h", 50.0)),
+                    sig_page=int(_ti.get("sig_page", -1)),
                 )
                 mark_token_signed(_sign_token, _signed_path)
                 if config.GDRIVE_ROOT_FOLDER_ID:
@@ -301,37 +302,62 @@ with tab_upload:
 
         # ── 서명 위치 미리보기 ─────────────────────────────────────────────
         if uploaded_pdf:
-            with st.expander("⚙️ 서명 위치 미리보기 / 조정 (기본값으로 마지막 페이지 자동 설정)"):
+            with st.expander("⚙️ 서명 위치 미리보기 / 조정", expanded=False):
                 try:
                     from modules.web_signer import render_page_with_sig_preview
-                    import io as _io
+                    import fitz as _fitz
 
                     pdf_preview_bytes = uploaded_pdf.getvalue()
-                    # 페이지 크기 먼저 가져오기 (좌표 0,0으로 렌더만)
-                    _, _pw, _ph = render_page_with_sig_preview(pdf_preview_bytes, -1, 0, 0, 1, 1)
-                    # 기본값: 페이지 우하단 근처 (페이지 크기에 맞게 클램핑)
-                    _def_x = min(st.session_state.get("u_sig_x", max(0.0, _pw - 120.0)), _pw - 10.0)
-                    _def_y = min(st.session_state.get("u_sig_y", 18.0), _ph - 10.0)
-                    _def_w = st.session_state.get("u_sig_w", 100.0)
-                    _def_h = st.session_state.get("u_sig_h", 40.0)
+
+                    # 전체 페이지 수 파악
+                    _doc = _fitz.open(stream=pdf_preview_bytes, filetype="pdf")
+                    _total_pages = len(_doc)
+                    _doc.close()
+
+                    # 페이지 선택
+                    _page_options = [f"{i+1}페이지" for i in range(_total_pages)]
+                    _page_options[-1] += " (마지막)"
+                    _sel_page_label = st.selectbox(
+                        "미리볼 페이지 (서명이 찍힐 페이지)",
+                        options=_page_options,
+                        index=_total_pages - 1,
+                        key="u_sig_page_sel",
+                    )
+                    _sel_page_idx = _page_options.index(_sel_page_label)  # 0-indexed
+
+                    # 해당 페이지 크기
+                    _, _pw, _ph = render_page_with_sig_preview(
+                        pdf_preview_bytes, _sel_page_idx, 0, 0, 1, 1
+                    )
+
+                    # 슬라이더 기본값 (세션 없으면 페이지 우하단)
+                    _def_x = float(st.session_state.get("u_sig_x", max(0.0, _pw - 120.0)))
+                    _def_x = max(0.0, min(_def_x, _pw - 10.0))
+                    _def_y = float(st.session_state.get("u_sig_y", 18.0))
+                    _def_y = max(0.0, min(_def_y, _ph - 10.0))
+                    _def_w = float(st.session_state.get("u_sig_w", 100.0))
+                    _def_w = max(10.0, min(_def_w, 300.0))
+                    _def_h = float(st.session_state.get("u_sig_h", 40.0))
+                    _def_h = max(10.0, min(_def_h, 150.0))
+
                     sl_col, pv_col = st.columns([1, 2])
                     with sl_col:
                         st.caption(f"페이지 크기: {_pw:.0f} × {_ph:.0f} pt")
-                        u_sig_x = st.slider("X 위치 (←→)", 0.0, float(_pw) - 1.0, _def_x, step=1.0, key="u_sig_x")
-                        u_sig_y = st.slider("Y 위치 (↑↓, 하단 기준)", 0.0, float(_ph) - 1.0, _def_y, step=1.0, key="u_sig_y")
-                        u_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("u_sig_w", 80.0), step=1.0, key="u_sig_w")
-                        u_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("u_sig_h", 50.0), step=1.0, key="u_sig_h")
+                        u_sig_x = st.slider("X 위치 (←→)", 0.0, max(1.0, _pw - 10.0), _def_x, step=1.0, key="u_sig_x")
+                        u_sig_y = st.slider("Y 위치 (↑↓, 하단 기준)", 0.0, max(1.0, _ph - 10.0), _def_y, step=1.0, key="u_sig_y")
+                        u_sig_w = st.slider("서명 너비", 10.0, min(300.0, _pw - u_sig_x), _def_w, step=1.0, key="u_sig_w")
+                        u_sig_h = st.slider("서명 높이", 10.0, min(150.0, _ph - u_sig_y), _def_h, step=1.0, key="u_sig_h")
                         if st.button("기본값 초기화", key="u_sig_reset"):
-                            for k in ("u_sig_x","u_sig_y","u_sig_w","u_sig_h"):
+                            for k in ("u_sig_x", "u_sig_y", "u_sig_w", "u_sig_h", "u_sig_page_sel"):
                                 st.session_state.pop(k, None)
                             st.rerun()
                     with pv_col:
                         preview_img, _, _ = render_page_with_sig_preview(
-                            pdf_preview_bytes, -1,
+                            pdf_preview_bytes, _sel_page_idx,
                             u_sig_x, u_sig_y, u_sig_w, u_sig_h
                         )
                         if preview_img:
-                            st.image(preview_img, caption="서명 위치 미리보기 (빨간 박스)", use_container_width=True)
+                            st.image(preview_img, caption=f"서명 위치 미리보기 — {_sel_page_label}", use_container_width=True)
                 except Exception as _e:
                     st.caption(f"미리보기 불가: {_e}")
 
@@ -443,6 +469,7 @@ with tab_upload:
                         sig_y=st.session_state.get("u_sig_y", 18.0),
                         sig_w=st.session_state.get("u_sig_w", 80.0),
                         sig_h=st.session_state.get("u_sig_h", 50.0),
+                        sig_page=_page_options.index(st.session_state.get("u_sig_page_sel", _page_options[-1])) if uploaded_pdf else -1,
                     )
                     sign_url = build_sign_url(token)
                     send_sign_request(emp_info, save_path, sign_url)
@@ -633,6 +660,7 @@ with tab_bulk:
                         sig_y=st.session_state.get("b_sig_y", 18.0),
                         sig_w=st.session_state.get("b_sig_w", 80.0),
                         sig_h=st.session_state.get("b_sig_h", 50.0),
+                        sig_page=int(st.session_state.get("b_sig_page", -1)),
                     )
                     sign_url = build_sign_url(token)
                     send_sign_request(emp_info, save_path, sign_url)

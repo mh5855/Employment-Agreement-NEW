@@ -14,7 +14,8 @@ from datetime import datetime
 # ── 토큰 생성 ──────────────────────────────────────────────────────────────────
 def create_signing_token(employee: dict, pdf_path: str,
                          sig_x: float = 680.0, sig_y: float = 18.0,
-                         sig_w: float = 80.0, sig_h: float = 50.0) -> str:
+                         sig_w: float = 80.0, sig_h: float = 50.0,
+                         sig_page: int = -1) -> str:
     from modules.db_logger import create_sign_token
     token = str(uuid.uuid4())
     create_sign_token(
@@ -23,7 +24,7 @@ def create_signing_token(employee: dict, pdf_path: str,
         employee_name=employee["성명"],
         email=employee["이메일"],
         pdf_path=os.path.abspath(pdf_path),
-        sig_x=sig_x, sig_y=sig_y, sig_w=sig_w, sig_h=sig_h,
+        sig_x=sig_x, sig_y=sig_y, sig_w=sig_w, sig_h=sig_h, sig_page=sig_page,
     )
     return token
 
@@ -239,6 +240,7 @@ def embed_signature_and_finalize(
     draw_y: float = 18.0,
     draw_w: float = 80.0,
     draw_h: float = 50.0,
+    sig_page: int = -1,
 ) -> str:
     """
     1) AcroForm 필드 위치 탐색
@@ -261,7 +263,12 @@ def embed_signature_and_finalize(
     try:
         with pikepdf.open(enc_path, password=pdf_password) as pdf:
             total_pages = len(pdf.pages)
-            target = total_pages - 1  # 마지막 페이지
+            # sig_page: -1이면 마지막 페이지, 그 외 0-indexed
+            if sig_page < 0:
+                target = total_pages + sig_page
+            else:
+                target = sig_page
+            target = max(0, min(target, total_pages - 1))
 
             # 이미지 삽입
             _embed_image_to_page(
@@ -315,17 +322,23 @@ def render_page_with_sig_preview(
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
     doc.close()
 
-    # PDF 좌표(좌하단 기준) → 이미지 좌표(좌상단 기준) 변환
-    img_x1 = sig_x * scale
-    img_y1 = (page_h - sig_y - sig_h) * scale
-    img_x2 = (sig_x + sig_w) * scale
-    img_y2 = (page_h - sig_y) * scale
+    # sig_x/y가 페이지 범위를 벗어나면 페이지 안쪽으로 조정
+    sig_x = min(sig_x, page_w - 1)
+    sig_y = min(sig_y, page_h - 1)
+    sig_w = min(sig_w, page_w - sig_x)
+    sig_h = min(sig_h, page_h - sig_y)
 
-    # 범위 클램핑
-    img_x1 = max(0, img_x1)
-    img_y1 = max(0, img_y1)
-    img_x2 = min(pix.width, img_x2)
-    img_y2 = min(pix.height, img_y2)
+    # PDF 좌표(좌하단 기준) → 이미지 좌표(좌상단 기준) 변환
+    img_x1 = max(0.0, sig_x * scale)
+    img_y1 = max(0.0, (page_h - sig_y - sig_h) * scale)
+    img_x2 = min(float(pix.width),  (sig_x + sig_w) * scale)
+    img_y2 = min(float(pix.height), (page_h - sig_y) * scale)
+
+    # 박스가 1px 미만이면 최소 크기 보장
+    if img_x2 <= img_x1:
+        img_x2 = img_x1 + 1
+    if img_y2 <= img_y1:
+        img_y2 = img_y1 + 1
 
     draw = ImageDraw.Draw(img)
     draw.rectangle([img_x1, img_y1, img_x2, img_y2], outline=(220, 50, 50), width=3)
