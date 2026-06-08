@@ -1,18 +1,157 @@
-"""좋은문화병원 근로계약서 자동화 시스템 — 관리자 앱 (포트 8501)."""
+"""좋은문화병원 근로계약서 자동화 시스템."""
 from __future__ import annotations
 
+import io
 import os
 import time
 import tempfile
 from pathlib import Path
+from datetime import datetime
 
 import streamlit as st
 from dotenv import load_dotenv
 
+# Streamlit Cloud 시크릿 → os.environ 주입 (로컬은 .env 파일 사용)
+try:
+    for _k, _v in st.secrets.items():
+        if _k not in os.environ:
+            os.environ[_k] = str(_v)
+except Exception:
+    pass
+
 load_dotenv(override=True)
 from config import config
 
-# ── 페이지 설정 ────────────────────────────────────────────────────────────────
+# ── 서명 모드 라우팅 ──────────────────────────────────────────────────────────
+_sign_token = st.query_params.get("token", "")
+
+if _sign_token:
+    st.set_page_config(
+        page_title="근로계약서 전자서명",
+        page_icon="✍️",
+        layout="centered",
+    )
+    st.markdown("""
+    <style>
+      .sign-header{background:linear-gradient(90deg,#1B3A6B,#2C5F8A);color:white;
+        padding:20px 28px;border-radius:10px;margin-bottom:20px;}
+      .info-box{background:#F5F8FC;border:1px solid #C5D8EC;
+        padding:14px 18px;border-radius:8px;margin-bottom:16px;}
+      .success-box{background:#E6F4EA;border:1px solid #34A853;
+        padding:16px 20px;border-radius:8px;}
+    </style>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="sign-header">
+      <h2 style="margin:0;">✍️ 근로계약서 전자서명</h2>
+      <p style="margin:4px 0 0;opacity:.85;">{config.HOSPITAL_NAME} 인사총무팀</p>
+    </div>""", unsafe_allow_html=True)
+
+    from modules.db_logger import get_sign_token, mark_token_signed
+    _ti = get_sign_token(_sign_token)
+
+    if not _ti:
+        st.error("유효하지 않은 서명 링크입니다.")
+        st.stop()
+    if _ti.get("signed_at"):
+        st.markdown(f"""<div class="success-box"><b>✅ 이미 서명이 완료되었습니다.</b><br>
+          서명 일시: {_ti['signed_at']}<br>서명자: {_ti['employee_name']} 님</div>""",
+          unsafe_allow_html=True)
+        st.stop()
+    if datetime.now().strftime("%Y-%m-%d %H:%M:%S") > _ti["expires_at"]:
+        st.error(f"서명 링크가 만료되었습니다 (만료: {_ti['expires_at']}). 인사총무팀에 재발급을 요청해 주세요.")
+        st.stop()
+
+    _emp_name = _ti["employee_name"]
+    _emp_id   = _ti["employee_id"]
+    _pdf_path = _ti["pdf_path"]
+
+    st.markdown(f"""<div class="info-box"><b>서명 대상자</b><br>
+      이름: <b>{_emp_name}</b> 님 &nbsp;|&nbsp; 사번: {_emp_id}</div>""",
+      unsafe_allow_html=True)
+    st.info("아래 순서대로 진행해 주세요: ① 비밀번호 입력 → ② 서명 → ③ 서명 완료 버튼")
+
+    st.subheader("① PDF 비밀번호 확인")
+    st.caption("이메일에 안내된 비밀번호 (주민등록번호 뒷 7자리)를 입력하세요.")
+    _pw_input = st.text_input("비밀번호 (주민번호 뒷 7자리)", type="password", max_chars=7, placeholder="예: 1234567")
+
+    st.subheader("② 아래 칸에 서명하세요")
+    st.caption("마우스 또는 터치로 서명을 입력해 주세요.")
+    try:
+        from streamlit_drawable_canvas import st_canvas
+        _canvas = st_canvas(
+            fill_color="rgba(0,0,0,0)", stroke_width=3, stroke_color="#000000",
+            background_color="#FAFAFA", height=160, width=680,
+            drawing_mode="freedraw", display_toolbar=True, key="sign_canvas",
+        )
+    except ImportError:
+        st.error("streamlit-drawable-canvas 패키지가 필요합니다.")
+        st.stop()
+
+    st.subheader("③ 서명 완료")
+    _submit = st.button("✅ 서명 완료 및 제출", use_container_width=True, type="primary")
+
+    if _submit:
+        if not _pw_input or len(_pw_input) != 7:
+            st.warning("비밀번호를 7자리로 입력해 주세요.")
+            st.stop()
+        if _canvas.image_data is None:
+            st.warning("서명을 먼저 입력해 주세요.")
+            st.stop()
+        import numpy as np
+        from PIL import Image as _PILImage
+        _sig_arr = _canvas.image_data.astype("uint8")
+        if _sig_arr.max() == 0:
+            st.warning("서명이 비어 있습니다.")
+            st.stop()
+        _sig_img = _PILImage.fromarray(_sig_arr, "RGBA")
+        _sig_buf = io.BytesIO()
+        _sig_img.save(_sig_buf, format="PNG")
+        _sig_bytes = _sig_buf.getvalue()
+
+        with st.spinner("서명을 처리하는 중입니다..."):
+            try:
+                from modules.web_signer import embed_signature_and_finalize
+                from modules.email_sender import send_final_contract
+                _signed_path = _pdf_path.replace(".pdf", f"_서명완료_{_emp_id}.pdf")
+                embed_signature_and_finalize(
+                    encrypted_pdf_path=_pdf_path,
+                    pdf_password=_pw_input,
+                    signature_png_bytes=_sig_bytes,
+                    output_path=_signed_path,
+                    draw_x=float(_ti.get("sig_x", 680.0)),
+                    draw_y=float(_ti.get("sig_y", 18.0)),
+                    draw_w=float(_ti.get("sig_w", 80.0)),
+                    draw_h=float(_ti.get("sig_h", 50.0)),
+                )
+                mark_token_signed(_sign_token, _signed_path)
+                if config.GDRIVE_ROOT_FOLDER_ID:
+                    try:
+                        from modules.drive_uploader import upload_signed_contract
+                        upload_signed_contract({"사번": _emp_id, "성명": _emp_name, "이메일": _ti["email"]}, _signed_path)
+                    except Exception as _e:
+                        st.warning(f"구글 드라이브 업로드 실패 (서명은 저장됨): {_e}")
+                try:
+                    send_final_contract({"성명": _emp_name, "이메일": _ti["email"]}, _signed_path)
+                except Exception as _e:
+                    st.warning(f"최종 계약서 이메일 발송 실패: {_e}")
+                st.balloons()
+                st.markdown(f"""<div class="success-box">
+                  <h3 style="margin:0 0 8px;">✅ 서명이 완료되었습니다!</h3>
+                  <p style="margin:0;"><b>{_emp_name}</b> 님의 근로계약서 서명이 완료되었습니다.<br>
+                  서명 완료본이 이메일({_ti['email']})로 발송되었습니다.</p>
+                </div>""", unsafe_allow_html=True)
+                if os.path.exists(_signed_path):
+                    with open(_signed_path, "rb") as _f:
+                        st.download_button("📄 서명 완료 계약서 다운로드", _f.read(),
+                            file_name=os.path.basename(_signed_path), mime="application/pdf")
+            except ValueError as _e:
+                st.error(f"❌ {_e}")
+            except Exception as _e:
+                st.error(f"처리 중 오류가 발생했습니다: {_e}")
+            finally:
+                del _pw_input
+    st.stop()
+
+# ── 관리자 페이지 ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="근로계약서 발송 | 좋은문화병원",
     page_icon="📋",
@@ -168,18 +307,18 @@ with tab_upload:
                     import io as _io
 
                     pdf_preview_bytes = uploaded_pdf.getvalue()
-                    # 페이지 크기 먼저 가져오기
-                    _, _pw, _ph = render_page_with_sig_preview(pdf_preview_bytes, -1,
-                        st.session_state.get("u_sig_x", 680.0),
-                        st.session_state.get("u_sig_y", 18.0),
-                        st.session_state.get("u_sig_w", 80.0),
-                        st.session_state.get("u_sig_h", 50.0),
-                    )
+                    # 페이지 크기 먼저 가져오기 (좌표 0,0으로 렌더만)
+                    _, _pw, _ph = render_page_with_sig_preview(pdf_preview_bytes, -1, 0, 0, 1, 1)
+                    # 기본값: 페이지 우하단 근처 (페이지 크기에 맞게 클램핑)
+                    _def_x = min(st.session_state.get("u_sig_x", max(0.0, _pw - 120.0)), _pw - 10.0)
+                    _def_y = min(st.session_state.get("u_sig_y", 18.0), _ph - 10.0)
+                    _def_w = st.session_state.get("u_sig_w", 100.0)
+                    _def_h = st.session_state.get("u_sig_h", 40.0)
                     sl_col, pv_col = st.columns([1, 2])
                     with sl_col:
                         st.caption(f"페이지 크기: {_pw:.0f} × {_ph:.0f} pt")
-                        u_sig_x = st.slider("X 위치 (←→)", 0.0, float(_pw), st.session_state.get("u_sig_x", 680.0), step=1.0, key="u_sig_x")
-                        u_sig_y = st.slider("Y 위치 (↑↓, 하단 기준)", 0.0, float(_ph), st.session_state.get("u_sig_y", 18.0), step=1.0, key="u_sig_y")
+                        u_sig_x = st.slider("X 위치 (←→)", 0.0, float(_pw) - 1.0, _def_x, step=1.0, key="u_sig_x")
+                        u_sig_y = st.slider("Y 위치 (↑↓, 하단 기준)", 0.0, float(_ph) - 1.0, _def_y, step=1.0, key="u_sig_y")
                         u_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("u_sig_w", 80.0), step=1.0, key="u_sig_w")
                         u_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("u_sig_h", 50.0), step=1.0, key="u_sig_h")
                         if st.button("기본값 초기화", key="u_sig_reset"):
