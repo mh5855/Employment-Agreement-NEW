@@ -193,7 +193,7 @@ if not st.session_state.get("admin_logged_in"):
     <div style="max-width:420px;margin:80px auto 0;">
       <div style="background:linear-gradient(90deg,#1B3A6B,#2C5F8A);color:white;
                   padding:20px 28px;border-radius:10px 10px 0 0;text-align:center;">
-        <h2 style="margin:0;">📋 근로계약서 발송 시스템</h2>
+        <h2 style="margin:0;font-size:1.15rem;letter-spacing:-.3px;">📋 근로계약서 발송 시스템</h2>
         <p style="margin:4px 0 0;opacity:.85;">{config.HOSPITAL_NAME} 인사총무팀</p>
       </div>
       <div style="border:1px solid #D0DFF0;border-top:none;padding:28px;border-radius:0 0 10px 10px;background:#fff;">
@@ -228,7 +228,7 @@ if not st.session_state.get("admin_logged_in"):
 # ── 헤더 (로그인 후) ──────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="header">
-  <h2 style="margin:0;font-size:1.6rem;">📋 근로계약서 발송 시스템</h2>
+  <h2 style="margin:0;font-size:1.45rem;letter-spacing:-.3px;">📋 근로계약서 발송 시스템</h2>
   <p style="margin:5px 0 0;opacity:.85;font-size:.92rem;">{config.HOSPITAL_NAME} 인사총무팀</p>
 </div>
 """, unsafe_allow_html=True)
@@ -331,13 +331,13 @@ with tab_upload:
                     )
 
                     # 슬라이더 기본값 (세션 없으면 페이지 우하단)
-                    _def_x = float(st.session_state.get("u_sig_x", max(0.0, _pw - 120.0)))
+                    _def_x = float(st.session_state.get("u_sig_x", 419.0))
                     _def_x = max(0.0, min(_def_x, _pw - 10.0))
-                    _def_y = float(st.session_state.get("u_sig_y", 18.0))
+                    _def_y = float(st.session_state.get("u_sig_y", 148.0))
                     _def_y = max(0.0, min(_def_y, _ph - 10.0))
                     _def_w = float(st.session_state.get("u_sig_w", 100.0))
                     _def_w = max(10.0, min(_def_w, 300.0))
-                    _def_h = float(st.session_state.get("u_sig_h", 40.0))
+                    _def_h = float(st.session_state.get("u_sig_h", 22.0))
                     _def_h = max(10.0, min(_def_h, 150.0))
 
                     sl_col, pv_col = st.columns([1, 2])
@@ -465,10 +465,10 @@ with tab_upload:
                     }
                     token    = create_signing_token(
                         emp_info, save_path,
-                        sig_x=st.session_state.get("u_sig_x", 680.0),
-                        sig_y=st.session_state.get("u_sig_y", 18.0),
+                        sig_x=st.session_state.get("u_sig_x", 680.0),   # 680=자동탐색 신호
+                        sig_y=st.session_state.get("u_sig_y", 18.0),    # 18=자동탐색 신호
                         sig_w=st.session_state.get("u_sig_w", 80.0),
-                        sig_h=st.session_state.get("u_sig_h", 50.0),
+                        sig_h=st.session_state.get("u_sig_h", 22.0),
                         sig_page=_page_options.index(st.session_state.get("u_sig_page_sel", _page_options[-1])) if uploaded_pdf else -1,
                     )
                     sign_url = build_sign_url(token)
@@ -520,10 +520,12 @@ with tab_bulk:
         with st.expander("⚙️ 서명 위치 설정 (전체 파일 공통 적용)"):
             b_sl, b_pv = st.columns([1, 2])
             with b_sl:
-                b_sig_x = st.slider("X 위치", 0.0, 900.0, st.session_state.get("b_sig_x", 680.0), step=1.0, key="b_sig_x")
-                b_sig_y = st.slider("Y 위치 (하단 기준)", 0.0, 400.0, st.session_state.get("b_sig_y", 18.0), step=1.0, key="b_sig_y")
+                b_sig_x = st.slider("X 위치", 0.0, 900.0, st.session_state.get("b_sig_x", 680.0), step=1.0, key="b_sig_x",
+                                    help="기본값 680 유지 시 '수령하였음' 텍스트 위치를 자동 탐색합니다.")
+                b_sig_y = st.slider("Y 위치 (하단 기준)", 0.0, 400.0, st.session_state.get("b_sig_y", 18.0), step=1.0, key="b_sig_y",
+                                    help="기본값 18 유지 시 자동 탐색합니다. '수령하였음' 라인 ≈ 148")
                 b_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("b_sig_w", 80.0), step=1.0, key="b_sig_w")
-                b_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("b_sig_h", 50.0), step=1.0, key="b_sig_h")
+                b_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("b_sig_h", 22.0), step=1.0, key="b_sig_h")
                 st.caption("첫 번째 파일을 업로드하면 미리보기가 활성화됩니다.")
                 if bulk_files:
                     try:
@@ -656,10 +658,10 @@ with tab_bulk:
                     }
                     token    = create_signing_token(
                         emp_info, save_path,
-                        sig_x=st.session_state.get("b_sig_x", 680.0),
-                        sig_y=st.session_state.get("b_sig_y", 18.0),
+                        sig_x=st.session_state.get("b_sig_x", 680.0),   # 680=자동탐색
+                        sig_y=st.session_state.get("b_sig_y", 18.0),    # 18=자동탐색
                         sig_w=st.session_state.get("b_sig_w", 80.0),
-                        sig_h=st.session_state.get("b_sig_h", 50.0),
+                        sig_h=st.session_state.get("b_sig_h", 22.0),
                         sig_page=int(st.session_state.get("b_sig_page", -1)),
                     )
                     sign_url = build_sign_url(token)

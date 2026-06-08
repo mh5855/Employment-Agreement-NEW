@@ -37,7 +37,8 @@ def build_sign_url(token: str) -> str:
 # ── 텍스트 앵커로 서명 삽입 좌표 탐색 ────────────────────────────────────────
 def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
     """
-    '서  명 :' 텍스트를 PDF에서 찾아 서명 삽입 좌표 반환.
+    PDF에서 서명 삽입 좌표 자동 탐색.
+    우선순위: '수령하였음' 라인 → '서  명 :' 라벨
     Returns (page_idx, (x, y, w, h)) | (-1, ())
     """
     try:
@@ -58,30 +59,44 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
         page_h = page.rect.height
         page_w = page.rect.width
 
-        _SIG_H = 30.0  # 서명 이미지 높이 (pt) — 수령확인 행 높이에 맞춤
+        _SIG_H = 22.0  # 수령확인 행 높이에 맞춘 서명 이미지 높이 (pt)
 
-        def _make_sig_rect(text_x1, pdf_y_bot, pdf_y_top):
+        def _make_sig_rect(text_x1, pdf_y_bot, pdf_y_top, right_margin=110.0):
             """텍스트 오른쪽에 서명 삽입 좌표 계산."""
             center_y = (pdf_y_bot + pdf_y_top) / 2
-            sx = text_x1 + 2
-            sy = center_y - _SIG_H / 2
-            sw = page_w - text_x1 - 57 - 5
-            sh = _SIG_H
+            row_h = abs(pdf_y_top - pdf_y_bot)
+            sx = text_x1 + 5
+            sy = center_y - max(row_h, _SIG_H) / 2
+            sw = page_w - text_x1 - right_margin - 5
+            sh = max(row_h, _SIG_H)
             return (sx, sy, sw, sh) if sw > 20 else None
 
-        # 방법 1: search_for 빠른 검색
+        # ── 우선순위 1: '수령하였음' 라인 (같은 라인에 서명) ─────────────────
+        for variant in ["수령하였음을 확인", "수령하였음", "근로계약서를 수령"]:
+            hits = page.search_for(variant)
+            if hits:
+                r = hits[-1]
+                pdf_y_bot = page_h - r.y1
+                pdf_y_top = page_h - r.y0
+                # '성 명:' 텍스트가 오른쪽에 있으므로 ~100pt 여백 확보
+                result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=105.0)
+                if result:
+                    doc.close()
+                    return pidx, result
+
+        # ── 우선순위 2: '서  명 :' 라벨 (fallback) ───────────────────────────
         for variant in ["서  명 :", "서 명 :", "서명 :"]:
             hits = page.search_for(variant)
             if hits:
                 r = hits[-1]
                 pdf_y_bot = page_h - r.y1
                 pdf_y_top = page_h - r.y0
-                result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top)
+                result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=57.0)
                 if result:
                     doc.close()
                     return pidx, result
 
-        # 방법 2: get_text dict 정밀 파싱
+        # ── 우선순위 3: get_text dict 정밀 파싱 ──────────────────────────────
         for block in page.get_text("dict").get("blocks", []):
             if block.get("type") != 0:
                 continue
@@ -89,11 +104,19 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                 for span in line.get("spans", []):
                     raw = span.get("text", "")
                     normalized = " ".join(raw.split())
+                    if "수령하였음" in normalized:
+                        bbox = span["bbox"]
+                        pdf_y_bot = page_h - bbox[3]
+                        pdf_y_top = page_h - bbox[1]
+                        result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=105.0)
+                        if result:
+                            doc.close()
+                            return pidx, result
                     if "서 명 :" in normalized or "서명:" in normalized.replace(" ", ""):
                         bbox = span["bbox"]
                         pdf_y_bot = page_h - bbox[3]
                         pdf_y_top = page_h - bbox[1]
-                        result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top)
+                        result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=57.0)
                         if result:
                             doc.close()
                             return pidx, result
@@ -231,6 +254,9 @@ def _strip_acroform(pdf) -> None:
 
 
 # ── 메인: 서명 삽입 + 저장 ────────────────────────────────────────────────────
+_AUTO_DETECT_SENTINEL = (680.0, 18.0)  # 기본값 = 자동탐색 필요 신호
+
+
 def embed_signature_and_finalize(
     encrypted_pdf_path: str,
     pdf_password: str,
@@ -243,7 +269,7 @@ def embed_signature_and_finalize(
     sig_page: int = -1,
 ) -> str:
     """
-    1) AcroForm 필드 위치 탐색
+    1) 좌표가 기본값(680, 18)이면 '수령하였음' 텍스트 앵커로 자동 탐색
     2) 서명 PNG → 흰 배경 JPEG 변환 + 공백 crop
     3) pikepdf로 복호화 + 이미지 콘텐츠 스트림 직접 삽입
     4) AcroForm / Widget 어노테이션 완전 제거
@@ -251,35 +277,39 @@ def embed_signature_and_finalize(
     """
     import pikepdf
 
-    # 절대경로 확인
     enc_path = os.path.abspath(encrypted_pdf_path)
     if not os.path.exists(enc_path):
         raise FileNotFoundError(f"PDF 파일을 찾을 수 없습니다: {enc_path}")
 
-    # ── 1. 서명 이미지 준비 ───────────────────────────────────────────────────
+    # ── 1. 좌표 자동 탐색 (기본값이면 PDF 텍스트에서 '수령하였음' 위치 검출) ──
+    _dx, _dy = _AUTO_DETECT_SENTINEL
+    if abs(draw_x - _dx) < 0.5 and abs(draw_y - _dy) < 0.5:
+        auto_page, auto_rect = _find_sign_anchor(enc_path, pdf_password)
+        if auto_page >= 0 and auto_rect:
+            draw_x, draw_y, draw_w, draw_h = auto_rect
+            if sig_page < 0:
+                sig_page = auto_page
+
+    # ── 2. 서명 이미지 준비 ───────────────────────────────────────────────────
     jpeg_bytes, img_w, img_h = _prepare_signature_jpeg(signature_png_bytes)
 
-    # ── 2. pikepdf로 직접 처리 ────────────────────────────────────────────────
+    # ── 3. pikepdf로 직접 처리 ────────────────────────────────────────────────
     try:
         with pikepdf.open(enc_path, password=pdf_password) as pdf:
             total_pages = len(pdf.pages)
-            # sig_page: -1이면 마지막 페이지, 그 외 0-indexed
             if sig_page < 0:
                 target = total_pages + sig_page
             else:
                 target = sig_page
             target = max(0, min(target, total_pages - 1))
 
-            # 이미지 삽입
             _embed_image_to_page(
                 pdf, target,
                 jpeg_bytes, img_w, img_h,
                 draw_x, draw_y, draw_w, draw_h,
             )
 
-            # AcroForm 완전 제거
             _strip_acroform(pdf)
-
             pdf.save(output_path)
 
     except pikepdf.PasswordError:

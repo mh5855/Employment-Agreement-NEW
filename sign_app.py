@@ -172,6 +172,7 @@ if submit:
                 draw_y=float(token_info.get("sig_y", 18.0)),
                 draw_w=float(token_info.get("sig_w", 80.0)),
                 draw_h=float(token_info.get("sig_h", 50.0)),
+                sig_page=int(token_info.get("sig_page", -1)),
             )
 
             # 토큰 완료 처리
