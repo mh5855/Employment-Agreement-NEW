@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 import tempfile
 from pathlib import Path
 
@@ -38,6 +39,53 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── 관리자 로그인 (앱 전체 보호) ──────────────────────────────────────────────
+_MAX_ATTEMPTS = 5      # 최대 시도 횟수
+_LOCK_SECONDS = 300    # 잠금 시간 (5분)
+
+if "login_attempts" not in st.session_state:
+    st.session_state["login_attempts"] = 0
+if "login_locked_until" not in st.session_state:
+    st.session_state["login_locked_until"] = 0.0
+
+if not st.session_state.get("admin_logged_in"):
+    st.markdown(f"""
+    <div style="max-width:420px;margin:80px auto 0;">
+      <div style="background:linear-gradient(90deg,#1B3A6B,#2C5F8A);color:white;
+                  padding:20px 28px;border-radius:10px 10px 0 0;text-align:center;">
+        <h2 style="margin:0;">📋 근로계약서 발송 시스템</h2>
+        <p style="margin:4px 0 0;opacity:.85;">{config.HOSPITAL_NAME} 인사총무팀</p>
+      </div>
+      <div style="border:1px solid #D0DFF0;border-top:none;padding:28px;border-radius:0 0 10px 10px;background:#fff;">
+    """, unsafe_allow_html=True)
+
+    now = time.time()
+    locked_until = st.session_state["login_locked_until"]
+    if now < locked_until:
+        remaining = int(locked_until - now)
+        st.error(f"🔒 로그인 시도가 너무 많습니다. {remaining}초 후 다시 시도해 주세요.")
+        st.stop()
+
+    pw = st.text_input("관리자 비밀번호", type="password", key="login_pw")
+    if st.button("로그인", use_container_width=True, type="primary"):
+        if pw == config.ADMIN_PASSWORD:
+            st.session_state["admin_logged_in"] = True
+            st.session_state["login_attempts"] = 0
+            st.rerun()
+        else:
+            st.session_state["login_attempts"] += 1
+            remaining_attempts = _MAX_ATTEMPTS - st.session_state["login_attempts"]
+            if st.session_state["login_attempts"] >= _MAX_ATTEMPTS:
+                st.session_state["login_locked_until"] = time.time() + _LOCK_SECONDS
+                st.session_state["login_attempts"] = 0
+                st.error("🔒 5회 실패로 5분간 잠금되었습니다.")
+            else:
+                st.error(f"비밀번호가 올바르지 않습니다. (남은 시도: {remaining_attempts}회)")
+
+    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.stop()
+
+# ── 헤더 (로그인 후) ──────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="header">
   <h2 style="margin:0;font-size:1.6rem;">📋 근로계약서 발송 시스템</h2>
@@ -418,21 +466,10 @@ with tab_bulk:
 # TAB 3: 발송 이력 (관리자 전용)
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_logs:
-    if not st.session_state.get("admin_auth"):
-        st.markdown("#### 🔒 관리자 인증")
-        pw_input = st.text_input("비밀번호", type="password", key="admin_pw_input")
-        if st.button("확인", key="admin_pw_btn"):
-            if pw_input == config.ADMIN_PASSWORD:
-                st.session_state["admin_auth"] = True
-                st.rerun()
-            else:
-                st.error("비밀번호가 올바르지 않습니다.")
-        st.stop()
-
     logout_col, _, ref_col = st.columns([1, 4, 1])
     with logout_col:
         if st.button("🔓 로그아웃", key="admin_logout"):
-            st.session_state.pop("admin_auth", None)
+            st.session_state.pop("admin_logged_in", None)
             st.rerun()
     with ref_col:
         st.button("🔄 새로고침", key="refresh_logs")
