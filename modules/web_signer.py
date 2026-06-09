@@ -281,6 +281,57 @@ def _embed_image_to_page(
         page["/Contents"] = pikepdf.Array([contents, draw_stream])
 
 
+# ── 기존 서명(/SigImg) 제거 ───────────────────────────────────────────────────
+def _strip_existing_signature(pdf, page_idx: int) -> None:
+    """이미 삽입된 /SigImg 서명을 콘텐츠 스트림과 Resources에서 제거."""
+    import pikepdf
+    import re
+
+    page = pdf.pages[page_idx]
+
+    # 1. Resources에서 /SigImg XObject 제거
+    try:
+        if "/Resources" in page and "/XObject" in page.Resources:
+            xobjs = page.Resources["/XObject"]
+            if "/SigImg" in xobjs:
+                del xobjs["/SigImg"]
+    except Exception:
+        pass
+
+    # 2. 콘텐츠 스트림 배열에서 /SigImg Do 포함 스트림 제거
+    contents = page.get("/Contents")
+    if contents is None:
+        return
+
+    if isinstance(contents, pikepdf.Array):
+        kept = []
+        for s in list(contents):
+            try:
+                data = bytes(s.read_bytes())
+                if b'/SigImg' in data:
+                    continue  # 서명 스트림 제거
+            except Exception:
+                pass
+            kept.append(s)
+        if len(kept) == 1:
+            page["/Contents"] = kept[0]
+        else:
+            page["/Contents"] = pikepdf.Array(kept)
+    else:
+        # 단일 스트림 내부에서 /SigImg Do 패턴 제거
+        try:
+            data = bytes(contents.read_bytes())
+            if b'/SigImg' in data:
+                cleaned = re.sub(
+                    rb'q\s+[\d\.\s]+cm\s+/SigImg\s+Do\s+Q[\r\n]*', b'', data
+                )
+                if b'/SigImg' in cleaned:
+                    cleaned = re.sub(rb'/SigImg\s+Do', b'', cleaned)
+                page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, cleaned))
+        except Exception:
+            pass
+
+
 # ── AcroForm 및 Widget 어노테이션 완전 제거 ────────────────────────────────────
 def _strip_acroform(pdf) -> None:
     import pikepdf
@@ -351,6 +402,7 @@ def embed_signature_and_finalize(
                 target = sig_page
             target = max(0, min(target, total_pages - 1))
 
+            _strip_existing_signature(pdf, target)
             _embed_image_to_page(
                 pdf, target,
                 jpeg_bytes, img_w, img_h,
