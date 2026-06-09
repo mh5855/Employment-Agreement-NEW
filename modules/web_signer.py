@@ -71,6 +71,31 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
             sh = max(row_h, _SIG_H)
             return (sx, sy, sw, sh) if sw > 20 else None
 
+        def _make_sig_rect_over_cell(bbox, pad_x=8.0, pad_y=6.0):
+            """(인) 셀 위에 서명을 덮어씌우는 좌표 계산 (셀 중앙 기준)."""
+            # bbox: (x0, y0, x1, y1) in fitz coords (top-left origin)
+            cx = (bbox[0] + bbox[2]) / 2
+            cy = (bbox[1] + bbox[3]) / 2
+            cell_w = max(bbox[2] - bbox[0], 40.0)
+            cell_h = max(bbox[3] - bbox[1], 20.0)
+            sw = cell_w + pad_x * 2
+            sh = cell_h + pad_y * 2
+            sx = cx - sw / 2
+            # PDF 좌표는 하단 기준
+            sy_pdf = page_h - cy - sh / 2
+            return (sx, sy_pdf, sw, sh)
+
+        # ── 우선순위 0: '(인)' 셀 탐색 → 셀 위에 서명 배치 ─────────────────
+        for variant in ["(인)", "（인）", "(印)"]:
+            hits = page.search_for(variant)
+            if hits:
+                # 가장 하단의 (인) 셀 선택
+                r = max(hits, key=lambda rect: rect.y1)
+                result = _make_sig_rect_over_cell((r.x0, r.y0, r.x1, r.y1))
+                if result and result[2] > 10:
+                    doc.close()
+                    return pidx, result
+
         # ── 우선순위 1: '확인 서명 :' 또는 '수령하였음' 라인 텍스트 검색 ──────
         for variant in ["확인 서명 :", "확인서명:", "확인 서명:", "수령하였음을 확인", "수령하였음", "근로계약서를 수령"]:
             hits = page.search_for(variant)
@@ -134,7 +159,29 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                 output_type=pytesseract.Output.DICT
             )
 
-            # "확인 서명 :" 콜론 위치 탐색
+            # OCR 우선순위 A: (인) 셀 탐색
+            in_items = []
+            for i, txt in enumerate(data['text']):
+                if not txt.strip():
+                    continue
+                if "(인)" in txt or "（인）" in txt or "(印)" in txt:
+                    in_items.append((data['left'][i], data['top'][i],
+                                     data['width'][i], data['height'][i], txt))
+            if in_items:
+                # 가장 하단의 (인) 항목 선택
+                it = max(in_items, key=lambda t: t[1] + t[3])
+                cx = (it[0] + it[0] + it[2]) / 2
+                cy = (it[1] + it[1] + it[3]) / 2
+                sw = max(it[2], 40.0) + 16.0
+                sh = max(it[3], 20.0) + 12.0
+                sx = (cx - sw / 2) / scale
+                sy_pdf = page_h - (cy + sh / 2) / scale
+                result = (sx, sy_pdf, sw / scale, sh / scale)
+                if result[2] > 10:
+                    doc.close()
+                    return pidx, result
+
+            # OCR 우선순위 B: "확인 서명 :" 콜론 위치 탐색
             keywords = ["확인", "서명", "수령하였음", "수령"]
             found_items = []
             for i, txt in enumerate(data['text']):
