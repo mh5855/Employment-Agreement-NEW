@@ -38,8 +38,8 @@ class Config:
     DB_PATH: str = field(default_factory=lambda: os.getenv("DB_PATH", "email_log.db"))
     ADMIN_PASSWORD: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", "admin1234"))
 
-    # 서명 앱 URL
-    SIGN_APP_URL: str = field(default_factory=lambda: os.getenv("SIGN_APP_URL", "http://localhost:8502"))
+    # 서명 앱 URL (app.py 자체가 ?token= 파라미터로 서명 처리하므로 메인 앱과 동일 URL)
+    SIGN_APP_URL: str = field(default_factory=lambda: os.getenv("SIGN_APP_URL", "http://localhost:8501"))
 
     def __post_init__(self):
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
