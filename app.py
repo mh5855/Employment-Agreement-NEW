@@ -169,21 +169,32 @@ def _inject_bg_image():
     b64 = base64.b64encode(bg_path.read_bytes()).decode()
     st.markdown(f"""
     <style>
-    .stApp::before {{
+    /* 배경 이미지 고정 오버레이 */
+    [data-testid="stAppViewContainer"]::before {{
         content: '';
         position: fixed;
         top: 0; left: 0;
-        width: 100%; height: 100%;
+        width: 100vw; height: 100vh;
         background-image: url('data:image/jpeg;base64,{b64}');
         background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
+        background-position: center center;
         opacity: 0.40;
-        z-index: -1;
+        z-index: 0;
         pointer-events: none;
     }}
-    .stApp {{
+    [data-testid="stAppViewContainer"] {{
+        background: transparent !important;
+    }}
+    [data-testid="stAppViewContainer"] > .main {{
         position: relative;
+        z-index: 1;
+    }}
+    .stApp {{
+        background: transparent !important;
+    }}
+    section[data-testid="stSidebar"] {{
+        position: relative;
+        z-index: 1;
     }}
     </style>
     """, unsafe_allow_html=True)
