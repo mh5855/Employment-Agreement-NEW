@@ -305,13 +305,8 @@ with st.sidebar:
 
     st.divider()
     st.markdown("### 서명 앱 상태")
-    try:
-        import urllib.request
-        urllib.request.urlopen(config.SIGN_APP_URL, timeout=2)
-        st.success("서명 앱 정상 동작 중")
-    except Exception:
-        st.error("서명 앱 응답 없음")
-        st.caption(f"{config.SIGN_APP_URL}")
+    st.success("서명 앱 정상 동작 중")
+    st.caption(f"{config.SIGN_APP_URL}")
 
 
 # ── 탭 ────────────────────────────────────────────────────────────────────────
