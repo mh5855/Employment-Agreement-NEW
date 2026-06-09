@@ -308,6 +308,11 @@ with st.sidebar:
     st.success("서명 앱 정상 동작 중")
     st.caption(f"{config.SIGN_APP_URL}")
 
+    st.divider()
+    if st.button("🔓 로그아웃", key="sidebar_logout", use_container_width=True):
+        st.session_state.pop("admin_logged_in", None)
+        st.rerun()
+
 
 # ── 탭 ────────────────────────────────────────────────────────────────────────
 tab_upload, tab_bulk, tab_logs = st.tabs([
@@ -744,11 +749,7 @@ with tab_bulk:
 # TAB 3: 발송 이력 (관리자 전용)
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_logs:
-    logout_col, _, ref_col = st.columns([1, 4, 1])
-    with logout_col:
-        if st.button("🔓 로그아웃", key="admin_logout"):
-            st.session_state.pop("admin_logged_in", None)
-            st.rerun()
+    ref_col, _ = st.columns([1, 5])
     with ref_col:
         st.button("🔄 새로고침", key="refresh_logs")
 
