@@ -38,7 +38,7 @@ def build_sign_url(token: str) -> str:
 def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
     """
     PDF에서 서명 삽입 좌표 자동 탐색.
-    우선순위: '수령하였음' 라인 → '서  명 :' 라벨
+    우선순위: 텍스트 검색 → OCR (이미지 기반 PDF)
     Returns (page_idx, (x, y, w, h)) | (-1, ())
     """
     try:
@@ -59,9 +59,9 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
         page_h = page.rect.height
         page_w = page.rect.width
 
-        _SIG_H = 22.0  # 수령확인 행 높이에 맞춘 서명 이미지 높이 (pt)
+        _SIG_H = 22.0
 
-        def _make_sig_rect(text_x1, pdf_y_bot, pdf_y_top, right_margin=110.0):
+        def _make_sig_rect(text_x1, pdf_y_bot, pdf_y_top, right_margin=40.0):
             """텍스트 오른쪽에 서명 삽입 좌표 계산."""
             center_y = (pdf_y_bot + pdf_y_top) / 2
             row_h = abs(pdf_y_top - pdf_y_bot)
@@ -71,15 +71,14 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
             sh = max(row_h, _SIG_H)
             return (sx, sy, sw, sh) if sw > 20 else None
 
-        # ── 우선순위 1: '확인 서명 :' 또는 '수령하였음' 라인 ────────────────
+        # ── 우선순위 1: '확인 서명 :' 또는 '수령하였음' 라인 텍스트 검색 ──────
         for variant in ["확인 서명 :", "확인서명:", "확인 서명:", "수령하였음을 확인", "수령하였음", "근로계약서를 수령"]:
             hits = page.search_for(variant)
             if hits:
                 r = hits[-1]
                 pdf_y_bot = page_h - r.y1
                 pdf_y_top = page_h - r.y0
-                # '성 명:' 텍스트가 오른쪽에 있으므로 ~100pt 여백 확보
-                result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=105.0)
+                result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=40.0)
                 if result:
                     doc.close()
                     return pidx, result
@@ -108,7 +107,7 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                         bbox = span["bbox"]
                         pdf_y_bot = page_h - bbox[3]
                         pdf_y_top = page_h - bbox[1]
-                        result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=105.0)
+                        result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=40.0)
                         if result:
                             doc.close()
                             return pidx, result
@@ -120,6 +119,55 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                         if result:
                             doc.close()
                             return pidx, result
+
+        # ── 우선순위 4: OCR (이미지 기반 PDF 대응) ───────────────────────────
+        try:
+            import pytesseract
+            from PIL import Image as _PILImage
+
+            DPI = 200
+            scale = DPI / 72.0
+            pix = page.get_pixmap(dpi=DPI)
+            ocr_img = _PILImage.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            data = pytesseract.image_to_data(
+                ocr_img, lang='kor+eng',
+                output_type=pytesseract.Output.DICT
+            )
+
+            # "확인 서명 :" 콜론 위치 탐색
+            keywords = ["확인", "서명", "수령하였음", "수령"]
+            found_items = []
+            for i, txt in enumerate(data['text']):
+                if not txt.strip():
+                    continue
+                if any(k in txt for k in keywords):
+                    found_items.append((data['left'][i], data['top'][i],
+                                        data['width'][i], data['height'][i], txt))
+
+            if found_items:
+                # y좌표 기준 클러스터링 → 가장 하단 줄 선택
+                found_items.sort(key=lambda t: t[1], reverse=True)
+                ref_y = found_items[0][1]
+                same_line = [it for it in found_items if abs(it[1] - ref_y) < 25]
+                same_line.sort(key=lambda t: t[0])
+
+                # 줄에서 가장 오른쪽 텍스트 끝 좌표
+                rightmost = max(same_line, key=lambda t: t[0] + t[2])
+                img_x1 = rightmost[0] + rightmost[2]
+                img_y0 = min(it[1] for it in same_line)
+                img_y1 = max(it[1] + it[3] for it in same_line)
+
+                # 이미지 좌표 → PDF pt (하단 기준)
+                pdf_x1   = img_x1 / scale
+                pdf_y_bot = page_h - img_y1 / scale
+                pdf_y_top = page_h - img_y0 / scale
+
+                result = _make_sig_rect(pdf_x1, pdf_y_bot, pdf_y_top, right_margin=40.0)
+                if result:
+                    doc.close()
+                    return pidx, result
+        except Exception:
+            pass
 
     doc.close()
     return -1, ()
