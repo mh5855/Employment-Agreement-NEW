@@ -370,9 +370,9 @@ with tab_upload:
                     )
 
                     # 슬라이더 기본값 (세션 없으면 페이지 우하단)
-                    _def_x = float(st.session_state.get("u_sig_x", 419.0))
+                    _def_x = float(st.session_state.get("u_sig_x", 680.0))
                     _def_x = max(0.0, min(_def_x, _pw - 10.0))
-                    _def_y = float(st.session_state.get("u_sig_y", 148.0))
+                    _def_y = float(st.session_state.get("u_sig_y", 18.0))
                     _def_y = max(0.0, min(_def_y, _ph - 10.0))
                     _def_w = float(st.session_state.get("u_sig_w", 100.0))
                     _def_w = max(10.0, min(_def_w, 300.0))

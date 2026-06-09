@@ -71,8 +71,8 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
             sh = max(row_h, _SIG_H)
             return (sx, sy, sw, sh) if sw > 20 else None
 
-        # ── 우선순위 1: '수령하였음' 라인 (같은 라인에 서명) ─────────────────
-        for variant in ["수령하였음을 확인", "수령하였음", "근로계약서를 수령"]:
+        # ── 우선순위 1: '확인 서명 :' 또는 '수령하였음' 라인 ────────────────
+        for variant in ["확인 서명 :", "확인서명:", "확인 서명:", "수령하였음을 확인", "수령하였음", "근로계약서를 수령"]:
             hits = page.search_for(variant)
             if hits:
                 r = hits[-1]
