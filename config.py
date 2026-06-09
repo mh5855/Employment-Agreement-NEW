@@ -36,10 +36,10 @@ class Config:
     OUTPUT_DIR: str = field(default_factory=lambda: os.getenv("OUTPUT_DIR", "output"))
     DATA_DIR: str = field(default_factory=lambda: os.getenv("DATA_DIR", "data"))
     DB_PATH: str = field(default_factory=lambda: os.getenv("DB_PATH", "email_log.db"))
-    ADMIN_PASSWORD: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", "admin1234"))
+    ADMIN_PASSWORD: str = field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", "good5855!"))
 
     # 서명 앱 URL
-    SIGN_APP_URL: str = field(default_factory=lambda: os.getenv("SIGN_APP_URL", "http://localhost:8502"))
+    SIGN_APP_URL: str = field(default_factory=lambda: os.getenv("SIGN_APP_URL", "https://employment-agreement-new-ams72nx4lqehxwcywngcgm.streamlit.app"))
 
     def __post_init__(self):
         os.makedirs(self.OUTPUT_DIR, exist_ok=True)
