@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import os
 import time
+import base64
 import tempfile
 from pathlib import Path
 from datetime import datetime
@@ -159,6 +160,35 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+def _inject_bg_image():
+    """병원 배경 이미지를 40% 불투명도로 주입한다."""
+    bg_path = Path(__file__).parent / "static" / "hospital_bg.jpg"
+    if not bg_path.exists():
+        return
+    b64 = base64.b64encode(bg_path.read_bytes()).decode()
+    st.markdown(f"""
+    <style>
+    .stApp::before {{
+        content: '';
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background-image: url('data:image/jpeg;base64,{b64}');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+        opacity: 0.40;
+        z-index: -1;
+        pointer-events: none;
+    }}
+    .stApp {{
+        position: relative;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+_inject_bg_image()
 
 st.markdown("""
 <style>
