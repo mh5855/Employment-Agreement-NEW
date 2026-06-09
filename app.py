@@ -169,32 +169,35 @@ def _inject_bg_image():
     b64 = base64.b64encode(bg_path.read_bytes()).decode()
     st.markdown(f"""
     <style>
-    /* 배경 이미지 고정 오버레이 */
-    [data-testid="stAppViewContainer"]::before {{
-        content: '';
-        position: fixed;
-        top: 0; left: 0;
-        width: 100vw; height: 100vh;
-        background-image: url('data:image/jpeg;base64,{b64}');
-        background-size: cover;
-        background-position: center center;
-        opacity: 0.40;
-        z-index: 0;
-        pointer-events: none;
-    }}
-    [data-testid="stAppViewContainer"] {{
+    /* ── 기본 배경 완전 제거 ── */
+    html {{ background: transparent !important; }}
+    body {{
         background: transparent !important;
-    }}
-    [data-testid="stAppViewContainer"] > .main {{
-        position: relative;
-        z-index: 1;
+        background-color: transparent !important;
     }}
     .stApp {{
         background: transparent !important;
+        background-color: transparent !important;
     }}
-    section[data-testid="stSidebar"] {{
-        position: relative;
-        z-index: 1;
+    [data-testid="stAppViewContainer"] {{
+        background: transparent !important;
+        background-color: transparent !important;
+    }}
+    [data-testid="stHeader"] {{
+        background: transparent !important;
+        background-color: transparent !important;
+    }}
+    /* ── 고정 배경 이미지 (40% 불투명도) ── */
+    html::before {{
+        content: '';
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        background: url('data:image/jpeg;base64,{b64}') center center / cover no-repeat;
+        opacity: 0.40;
+        z-index: -9999;
+        pointer-events: none;
     }}
     </style>
     """, unsafe_allow_html=True)
