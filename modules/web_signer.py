@@ -506,8 +506,8 @@ def embed_signature_and_finalize(
             # 오른쪽으로 이동 후 우측 20% 영역 보장 (콘텐츠 가림 방지)
             _X_SHIFT = 142.0
             draw_x = draw_x + _X_SHIFT
-            # 페이지 우측 20% 이내 배치 강제 (문서 내용 가림 방지)
-            right_zone = pg_w * 0.80
+            # 페이지 우측 10% 이내 배치 강제 (문서 내용 가림 방지)
+            right_zone = pg_w * 0.90
             if draw_x < right_zone:
                 draw_x = right_zone
             # 페이지 경계 초과 시 우측 여백 기준 보정
