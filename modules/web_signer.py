@@ -330,9 +330,8 @@ def _embed_image_to_page(
 
     # 3. 콘텐츠 스트림 조립
     font_sz = 8.0
-    text_y = y - font_sz - 2.0
-    if text_y < 2.0:          # 하단 여백 부족 시 박스 안 하단
-        text_y = y + 2.0
+    # PDF CTM이 y축 반전된 경우: y + draw_h + 4 (박스 위 raw coords) → 뷰어에서 박스 아래 표시
+    text_y = y + draw_h + 4.0
 
     safe_text = ""
     if signed_at:
