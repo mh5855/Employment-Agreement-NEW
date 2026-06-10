@@ -441,7 +441,7 @@ def _strip_acroform(pdf) -> None:
 
 
 # ── 메인: 서명 삽입 + 저장 ────────────────────────────────────────────────────
-_AUTO_DETECT_SENTINEL = (680.0, 145.0)  # 기본값 = 자동탐색 필요 신호
+_AUTO_DETECT_SENTINEL = (680.0, 80.0)  # 기본값 = 자동탐색 필요 신호
 
 
 def embed_signature_and_finalize(

@@ -378,7 +378,7 @@ with tab_upload:
                     # 슬라이더 기본값 (세션 없으면 페이지 우하단)
                     _def_x = float(st.session_state.get("u_sig_x", 680.0))
                     _def_x = max(0.0, min(_def_x, _pw - 10.0))
-                    _def_y = float(st.session_state.get("u_sig_y", 145.0))
+                    _def_y = float(st.session_state.get("u_sig_y", 80.0))
                     _def_y = max(0.0, min(_def_y, _ph - 10.0))
                     _def_w = float(st.session_state.get("u_sig_w", 100.0))
                     _def_w = max(10.0, min(_def_w, 300.0))
@@ -511,7 +511,7 @@ with tab_upload:
                     token    = create_signing_token(
                         emp_info, save_path,
                         sig_x=st.session_state.get("u_sig_x", 680.0),   # 680=자동탐색 신호
-                        sig_y=st.session_state.get("u_sig_y", 145.0),   # 145=자동탐색 신호
+                        sig_y=st.session_state.get("u_sig_y", 80.0),   # 145=자동탐색 신호
                         sig_w=st.session_state.get("u_sig_w", 80.0),
                         sig_h=st.session_state.get("u_sig_h", 22.0),
                         sig_page=_page_options.index(st.session_state.get("u_sig_page_sel", _page_options[-1])) if uploaded_pdf else -1,
@@ -567,7 +567,7 @@ with tab_bulk:
             with b_sl:
                 b_sig_x = st.slider("X 위치", 0.0, 900.0, st.session_state.get("b_sig_x", 680.0), step=1.0, key="b_sig_x",
                                     help="기본값 680 유지 시 '수령하였음' 텍스트 위치를 자동 탐색합니다.")
-                b_sig_y = st.slider("Y 위치 (하단 기준)", 0.0, 400.0, st.session_state.get("b_sig_y", 145.0), step=1.0, key="b_sig_y",
+                b_sig_y = st.slider("Y 위치 (하단 기준)", 0.0, 400.0, st.session_state.get("b_sig_y", 80.0), step=1.0, key="b_sig_y",
                                     help="기본값 145 유지 시 자동 탐색합니다.")
                 b_sig_w = st.slider("서명 너비", 10.0, 300.0, st.session_state.get("b_sig_w", 80.0), step=1.0, key="b_sig_w")
                 b_sig_h = st.slider("서명 높이", 10.0, 150.0, st.session_state.get("b_sig_h", 22.0), step=1.0, key="b_sig_h")
@@ -704,7 +704,7 @@ with tab_bulk:
                     token    = create_signing_token(
                         emp_info, save_path,
                         sig_x=st.session_state.get("b_sig_x", 680.0),   # 680=자동탐색
-                        sig_y=st.session_state.get("b_sig_y", 145.0),   # 145=자동탐색
+                        sig_y=st.session_state.get("b_sig_y", 80.0),   # 145=자동탐색
                         sig_w=st.session_state.get("b_sig_w", 80.0),
                         sig_h=st.session_state.get("b_sig_h", 22.0),
                         sig_page=int(st.session_state.get("b_sig_page", -1)),
