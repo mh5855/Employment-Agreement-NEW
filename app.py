@@ -234,13 +234,14 @@ if "login_locked_until" not in st.session_state:
 
 if not st.session_state.get("admin_logged_in"):
     st.markdown(f"""
-    <div style="max-width:420px;margin:80px auto 0;">
+    <div style="max-width:820px;margin:60px auto 0;">
       <div style="background:linear-gradient(90deg,#1B3A6B,#2C5F8A);color:white;
-                  padding:20px 28px;border-radius:10px 10px 0 0;text-align:center;">
-        <h2 style="margin:0;font-size:1.15rem;letter-spacing:-.3px;">📋 근로계약서 발송 시스템</h2>
-        <p style="margin:4px 0 0;opacity:.85;">{config.HOSPITAL_NAME} 인사총무팀</p>
+                  padding:48px 64px;border-radius:14px 14px 0 0;text-align:center;">
+        <h2 style="margin:0;font-size:2.4rem;letter-spacing:-.5px;font-weight:700;">📋 근로계약서 발송 시스템</h2>
+        <p style="margin:10px 0 0;opacity:.85;font-size:1.25rem;">{config.HOSPITAL_NAME} 인사총무팀</p>
       </div>
-      <div style="border:1px solid #D0DFF0;border-top:none;padding:28px;border-radius:0 0 10px 10px;background:#fff;">
+      <div style="border:1px solid #D0DFF0;border-top:none;padding:36px;border-radius:0 0 14px 14px;background:#fff;">
+        <div style="max-width:380px;margin:0 auto;">
     """, unsafe_allow_html=True)
 
     now = time.time()
@@ -266,7 +267,7 @@ if not st.session_state.get("admin_logged_in"):
             else:
                 st.error(f"비밀번호가 올바르지 않습니다. (남은 시도: {remaining_attempts}회)")
 
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div></div></div>", unsafe_allow_html=True)
     st.stop()
 
 # ── 헤더 (로그인 후) ──────────────────────────────────────────────────────────
