@@ -89,8 +89,12 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
         for variant in ["(인)", "（인）", "(印)"]:
             hits = page.search_for(variant)
             if hits:
+                # 페이지 하단 50% 이내 항목만 후보로 사용 (상단 인감 제외)
+                lower_hits = [r for r in hits if r.y0 > page_h * 0.5]
+                if not lower_hits:
+                    lower_hits = hits  # 전부 상단이면 모두 후보
                 # 가장 하단의 (인) 셀 선택
-                r = max(hits, key=lambda rect: rect.y1)
+                r = max(lower_hits, key=lambda rect: rect.y1)
                 result = _make_sig_rect_over_cell((r.x0, r.y0, r.x1, r.y1))
                 if result and result[2] > 10:
                     doc.close()
@@ -322,33 +326,37 @@ def _embed_image_to_page(
         )
     )
 
-    # 3. 박스 테두리 (0.8pt, 남색)
-    border_cmd = (
-        f"q 0.8 w 0.18 0.27 0.47 RG "
-        f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re S Q\n"
-    ).encode()
+    # 3. 콘텐츠 스트림 조립
+    font_sz = 8.0
+    text_y = y - font_sz - 2.0
+    if text_y < 2.0:          # 하단 여백 부족 시 박스 안 하단
+        text_y = y + 2.0
 
-    # 4. 서명 이미지 삽입
-    img_cmd = (
-        f"q {draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm "
-        f"/SigImg Do Q\n"
-    ).encode()
-
-    # 5. 서명 날짜/시간 텍스트 (박스 아래, ASCII only)
-    date_cmd = b""
+    safe_text = ""
     if signed_at:
-        font_sz = 6.5
-        text_y = y - font_sz - 1.5
-        if text_y < 2.0:          # 하단 여백 부족 시 박스 안 하단
-            text_y = y + 2.0
         safe_text = signed_at.encode("ascii", errors="ignore").decode("ascii")
-        date_cmd = (
-            f"q BT /SigFont {font_sz:.1f} Tf 0.25 0.25 0.45 rg "
-            f"{x:.4f} {text_y:.4f} Td ({safe_text}) Tj ET Q\n"
-        ).encode()
+
+    # BT/ET 는 q/Q 와 별개 블록으로 작성 (PDF spec 준수)
+    parts = [
+        # 박스 테두리 (남색 0.8pt)
+        f"q\n0.8 w\n0.18 0.27 0.47 RG\n"
+        f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re\nS\nQ\n",
+        # 서명 이미지
+        f"q\n{draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm\n/SigImg Do\nQ\n",
+    ]
+    if safe_text:
+        # Tm 으로 절대좌표 지정 (Td 는 이전 텍스트 행 기준 상대이동이라 오차 발생)
+        parts.append(
+            f"BT\n"
+            f"/SigFont {font_sz:.1f} Tf\n"
+            f"0.25 0.25 0.45 rg\n"
+            f"1 0 0 1 {x:.4f} {text_y:.4f} Tm\n"
+            f"({safe_text}) Tj\n"
+            f"ET\n"
+        )
 
     draw_stream = pdf.make_indirect(
-        pikepdf.Stream(pdf, border_cmd + img_cmd + date_cmd)
+        pikepdf.Stream(pdf, "".join(parts).encode())
     )
 
     # 6. 기존 Contents에 append
@@ -433,7 +441,7 @@ def _strip_acroform(pdf) -> None:
 
 
 # ── 메인: 서명 삽입 + 저장 ────────────────────────────────────────────────────
-_AUTO_DETECT_SENTINEL = (680.0, 18.0)  # 기본값 = 자동탐색 필요 신호
+_AUTO_DETECT_SENTINEL = (680.0, 145.0)  # 기본값 = 자동탐색 필요 신호
 
 
 def embed_signature_and_finalize(
