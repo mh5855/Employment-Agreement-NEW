@@ -342,7 +342,8 @@ def _embed_image_to_page(
         f"q\n0.8 w\n0.18 0.27 0.47 RG\n"
         f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re\nS\nQ\n",
         # 서명 이미지
-        f"q\n{draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm\n/SigImg Do\nQ\n",
+        # -draw_h + y+draw_h 로 수직 플립 보정 (PDF 이미지 좌표계 Y축 반전)
+        f"q\n{draw_w:.4f} 0 0 -{draw_h:.4f} {x:.4f} {y + draw_h:.4f} cm\n/SigImg Do\nQ\n",
     ]
     if safe_text:
         # Tm 으로 절대좌표 지정 (Td 는 이전 텍스트 행 기준 상대이동이라 오차 발생)
