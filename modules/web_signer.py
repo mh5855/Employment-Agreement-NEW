@@ -276,6 +276,7 @@ def _prepare_signature_jpeg(sig_png_bytes: bytes) -> tuple[bytes, int, int]:
         bg = bg.crop((cmin, rmin, cmax + 1, rmax + 1))
 
     buf = io.BytesIO()
+    bg = bg.transpose(Image.FLIP_TOP_BOTTOM)  # PDF 이미지 좌표계 보정 (Y축 반전)
     bg.save(buf, format="JPEG", quality=95)
     return buf.getvalue(), bg.width, bg.height
 
@@ -342,9 +343,8 @@ def _embed_image_to_page(
         # 박스 테두리 (남색 0.8pt)
         f"q\n0.8 w\n0.18 0.27 0.47 RG\n"
         f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re\nS\nQ\n",
-        # 서명 이미지
-        # -draw_h + y+draw_h 로 수직 플립 보정 (PDF 이미지 좌표계 Y축 반전)
-        f"q\n{draw_w:.4f} 0 0 -{draw_h:.4f} {x:.4f} {y + draw_h:.4f} cm\n/SigImg Do\nQ\n",
+        # 서명 이미지 (PIL에서 수직 플립 후 저장했으므로 표준 cm 행렬 사용)
+        f"q\n{draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm\n/SigImg Do\nQ\n",
     ]
     if safe_text:
         # Tm 으로 절대좌표 지정 (Td 는 이전 텍스트 행 기준 상대이동이라 오차 발생)
@@ -504,10 +504,13 @@ def embed_signature_and_finalize(
             # y가 페이지 상단 30% 이상이면 자동탐색 결과가 잘못된 것 → 기본값 사용
             if draw_y > pg_h_pt * 0.7:
                 draw_y = 80.0
+            # 5cm(142pt) 오른쪽으로 이동
+            _X_SHIFT = 142.0
+            draw_x = draw_x + _X_SHIFT
             # x가 페이지 밖으로 벗어나면 우측 여백 기준으로 보정
             if draw_x + draw_w > pg_w or draw_x < 0:
                 draw_w = min(draw_w, 120.0)
-                draw_x = pg_w - draw_w - 30.0
+                draw_x = pg_w - draw_w - 10.0
 
             _strip_existing_signature(pdf, target)
             _embed_image_to_page(
