@@ -750,9 +750,32 @@ with tab_bulk:
 # TAB 3: 발송 이력 (관리자 전용)
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_logs:
-    ref_col, _ = st.columns([1, 5])
+    ref_col, clear_col, _ = st.columns([1, 1, 4])
     with ref_col:
         st.button("🔄 새로고침", key="refresh_logs")
+    with clear_col:
+        if st.button("🗑️ 이력 초기화", key="clear_logs_btn", type="secondary"):
+            st.session_state["confirm_clear"] = True
+
+    if st.session_state.get("confirm_clear"):
+        st.warning("⚠️ **발송 이력과 서명 토큰을 모두 삭제합니다. 계속하시겠습니까?**")
+        ok_c, cancel_c, _ = st.columns([1, 1, 4])
+        if ok_c.button("✅ 확인 삭제", key="confirm_clear_ok", type="primary"):
+            try:
+                import sqlite3
+                con = sqlite3.connect(config.DB_PATH)
+                con.execute("DELETE FROM email_log")
+                con.execute("DELETE FROM sign_tokens")
+                con.commit()
+                con.close()
+                st.session_state.pop("confirm_clear", None)
+                st.success("✅ 발송 이력이 초기화되었습니다.")
+                st.rerun()
+            except Exception as _ce:
+                st.error(f"초기화 실패: {_ce}")
+        if cancel_c.button("❌ 취소", key="confirm_clear_cancel"):
+            st.session_state.pop("confirm_clear", None)
+            st.rerun()
 
     try:
         from modules.db_logger import get_recent_logs
