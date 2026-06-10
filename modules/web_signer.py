@@ -286,6 +286,7 @@ def _embed_image_to_page(
     y: float,
     draw_w: float,
     draw_h: float,
+    signed_at: str = "",   # "YYYY-MM-DD HH:MM:SS" 형식 (ASCII만 사용)
 ):
     import pikepdf
 
@@ -301,29 +302,61 @@ def _embed_image_to_page(
     img_xobj["/BitsPerComponent"] = 8
     img_xobj["/Filter"]           = pikepdf.Name("/DCTDecode")
 
-    # 2. 페이지 Resources에 XObject 등록
+    # 2. 페이지 Resources에 XObject + Font 등록
     if "/Resources" not in page:
         page["/Resources"] = pikepdf.Dictionary()
     if "/XObject" not in page.Resources:
         page.Resources["/XObject"] = pikepdf.Dictionary()
+    if "/Font" not in page.Resources:
+        page.Resources["/Font"] = pikepdf.Dictionary()
 
-    xobj_ref = pdf.make_indirect(img_xobj)
-    page.Resources["/XObject"]["/SigImg"] = xobj_ref
+    page.Resources["/XObject"]["/SigImg"] = pdf.make_indirect(img_xobj)
 
-    # 3. 그리기 명령 (콘텐츠 스트림 추가)
-    draw_cmd = (
+    # Helvetica (내장 폰트) — ASCII 날짜 텍스트용
+    page.Resources["/Font"]["/SigFont"] = pdf.make_indirect(
+        pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/Type1"),
+            BaseFont=pikepdf.Name("/Helvetica"),
+            Encoding=pikepdf.Name("/WinAnsiEncoding"),
+        )
+    )
+
+    # 3. 박스 테두리 (0.8pt, 남색)
+    border_cmd = (
+        f"q 0.8 w 0.18 0.27 0.47 RG "
+        f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re S Q\n"
+    ).encode()
+
+    # 4. 서명 이미지 삽입
+    img_cmd = (
         f"q {draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm "
         f"/SigImg Do Q\n"
     ).encode()
-    draw_stream = pdf.make_indirect(pikepdf.Stream(pdf, draw_cmd))
 
-    # 4. 기존 Contents에 append
+    # 5. 서명 날짜/시간 텍스트 (박스 아래, ASCII only)
+    date_cmd = b""
+    if signed_at:
+        font_sz = 6.5
+        text_y = y - font_sz - 1.5
+        if text_y < 2.0:          # 하단 여백 부족 시 박스 안 하단
+            text_y = y + 2.0
+        safe_text = signed_at.encode("ascii", errors="ignore").decode("ascii")
+        date_cmd = (
+            f"q BT /SigFont {font_sz:.1f} Tf 0.25 0.25 0.45 rg "
+            f"{x:.4f} {text_y:.4f} Td ({safe_text}) Tj ET Q\n"
+        ).encode()
+
+    draw_stream = pdf.make_indirect(
+        pikepdf.Stream(pdf, border_cmd + img_cmd + date_cmd)
+    )
+
+    # 6. 기존 Contents에 append
     contents = page.get("/Contents")
     if contents is None:
         page["/Contents"] = draw_stream
     elif isinstance(contents, pikepdf.Array):
-        new_arr = pikepdf.Array(list(contents) + [draw_stream])
-        page["/Contents"] = new_arr
+        page["/Contents"] = pikepdf.Array(list(contents) + [draw_stream])
     else:
         page["/Contents"] = pikepdf.Array([contents, draw_stream])
 
@@ -438,6 +471,7 @@ def embed_signature_and_finalize(
 
     # ── 2. 서명 이미지 준비 ───────────────────────────────────────────────────
     jpeg_bytes, img_w, img_h = _prepare_signature_jpeg(signature_png_bytes)
+    signed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ── 3. pikepdf로 직접 처리 ────────────────────────────────────────────────
     try:
@@ -454,6 +488,7 @@ def embed_signature_and_finalize(
                 pdf, target,
                 jpeg_bytes, img_w, img_h,
                 draw_x, draw_y, draw_w, draw_h,
+                signed_at=signed_at,
             )
 
             _strip_acroform(pdf)
