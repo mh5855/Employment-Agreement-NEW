@@ -89,14 +89,14 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
         for variant in ["(인)", "（인）", "(印)"]:
             hits = page.search_for(variant)
             if hits:
-                # 페이지 하단 50% 이내 항목만 후보로 사용 (상단 인감 제외)
+                # 페이지 하단 50% 이내 항목만 사용 (상단 인감 제외, 없으면 skip)
                 lower_hits = [r for r in hits if r.y0 > page_h * 0.5]
                 if not lower_hits:
-                    lower_hits = hits  # 전부 상단이면 모두 후보
-                # 가장 하단의 (인) 셀 선택
+                    continue
                 r = max(lower_hits, key=lambda rect: rect.y1)
                 result = _make_sig_rect_over_cell((r.x0, r.y0, r.x1, r.y1))
-                if result and result[2] > 10:
+                # 페이지 하단 70% 이내 위치만 유효
+                if result and result[2] > 10 and result[1] < page_h * 0.7:
                     doc.close()
                     return pidx, result
 
@@ -108,7 +108,8 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                 pdf_y_bot = page_h - r.y1
                 pdf_y_top = page_h - r.y0
                 result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=40.0)
-                if result:
+                # 페이지 하단 70% 이내 위치만 유효
+                if result and result[1] < page_h * 0.7:
                     doc.close()
                     return pidx, result
 
@@ -120,7 +121,7 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                 pdf_y_bot = page_h - r.y1
                 pdf_y_top = page_h - r.y0
                 result = _make_sig_rect(r.x1, pdf_y_bot, pdf_y_top, right_margin=57.0)
-                if result:
+                if result and result[1] < page_h * 0.7:
                     doc.close()
                     return pidx, result
 
@@ -137,7 +138,7 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                         pdf_y_bot = page_h - bbox[3]
                         pdf_y_top = page_h - bbox[1]
                         result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=40.0)
-                        if result:
+                        if result and result[1] < page_h * 0.7:
                             doc.close()
                             return pidx, result
                     if "서 명 :" in normalized or "서명:" in normalized.replace(" ", ""):
@@ -145,7 +146,7 @@ def _find_sign_anchor(enc_path: str, password: str) -> tuple[int, tuple]:
                         pdf_y_bot = page_h - bbox[3]
                         pdf_y_top = page_h - bbox[1]
                         result = _make_sig_rect(bbox[2], pdf_y_bot, pdf_y_top, right_margin=57.0)
-                        if result:
+                        if result and result[1] < page_h * 0.7:
                             doc.close()
                             return pidx, result
 
@@ -491,6 +492,22 @@ def embed_signature_and_finalize(
             else:
                 target = sig_page
             target = max(0, min(target, total_pages - 1))
+
+            # 페이지 크기 파악 후 좌표 보정
+            try:
+                _mb = pdf.pages[target].get("/MediaBox")
+                pg_w = float(_mb[2]) if _mb else 595.0
+                pg_h_pt = float(_mb[3]) if _mb else 842.0
+            except Exception:
+                pg_w, pg_h_pt = 595.0, 842.0
+
+            # y가 페이지 상단 30% 이상이면 자동탐색 결과가 잘못된 것 → 기본값 사용
+            if draw_y > pg_h_pt * 0.7:
+                draw_y = 80.0
+            # x가 페이지 밖으로 벗어나면 우측 여백 기준으로 보정
+            if draw_x + draw_w > pg_w or draw_x < 0:
+                draw_w = min(draw_w, 120.0)
+                draw_x = pg_w - draw_w - 30.0
 
             _strip_existing_signature(pdf, target)
             _embed_image_to_page(
