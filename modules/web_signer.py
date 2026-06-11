@@ -346,12 +346,12 @@ def _embed_image_to_page(
         f"q\n{draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm\n/SigImg Do\nQ\n",
     ]
     if safe_text:
-        # Tm 으로 절대좌표 지정 (Td 는 이전 텍스트 행 기준 상대이동이라 오차 발생)
+        # Tm y-scale=-1: 페이지 CTM y-flip과 상쇄되어 글리프 정방향 렌더링
         parts.append(
             f"BT\n"
             f"/SigFont {font_sz:.1f} Tf\n"
             f"0.25 0.25 0.45 rg\n"
-            f"1 0 0 1 {x:.4f} {text_y:.4f} Tm\n"
+            f"1 0 0 -1 {x:.4f} {text_y:.4f} Tm\n"
             f"({safe_text}) Tj\n"
             f"ET\n"
         )
