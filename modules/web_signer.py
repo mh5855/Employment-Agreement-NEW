@@ -503,17 +503,10 @@ def embed_signature_and_finalize(
             # y가 페이지 상단 30% 이상이면 자동탐색 결과가 잘못된 것 → 기본값 사용
             if draw_y > pg_h_pt * 0.7:
                 draw_y = 80.0
-            # 오른쪽으로 이동 후 우측 20% 영역 보장 (콘텐츠 가림 방지)
-            _X_SHIFT = 142.0
-            draw_x = draw_x + _X_SHIFT
-            # 페이지 우측 10% 이내 배치 강제 (문서 내용 가림 방지)
-            right_zone = pg_w * 0.90
-            if draw_x < right_zone:
-                draw_x = right_zone
-            # 페이지 경계 초과 시 우측 여백 기준 보정
-            if draw_x + draw_w > pg_w:
-                draw_w = min(draw_w, pg_w * 0.18)
-                draw_x = pg_w - draw_w - 8.0
+            # 페이지 경계 초과 시에만 보정 (자동탐색 위치 최대한 유지)
+            if draw_x + draw_w > pg_w or draw_x < 0:
+                draw_w = min(draw_w, 120.0)
+                draw_x = pg_w - draw_w - 10.0
 
             _strip_existing_signature(pdf, target)
             _embed_image_to_page(
