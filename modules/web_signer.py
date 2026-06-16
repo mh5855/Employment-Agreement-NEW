@@ -281,6 +281,67 @@ def _prepare_signature_jpeg(sig_png_bytes: bytes) -> tuple[bytes, int, int]:
     return buf.getvalue(), bg.width, bg.height
 
 
+# ── 페이지 최상위 CTM 파싱 & 역행렬 ────────────────────────────────────────────
+def _get_page_ctm(pdf, page_idx: int) -> list:
+    """현재 페이지 Contents 스트림들에서 q-depth=0 의 누적 CTM을 반환."""
+    import re
+    import pikepdf as _pikepdf
+    page = pdf.pages[page_idx]
+    contents = page.get("/Contents")
+    if contents is None:
+        return [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+    streams = list(contents) if isinstance(contents, _pikepdf.Array) else [contents]
+
+    all_data = ""
+    for s in streams:
+        try:
+            all_data += bytes(s.read_bytes()).decode("latin-1", errors="ignore")
+        except Exception:
+            pass
+
+    # q/Q 깊이 0 수준에서만 cm 적용
+    ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    depth = 0
+    nums: list = []
+    for tok in re.split(r"\s+", all_data.strip()):
+        if tok == "q":
+            depth += 1
+            nums = []
+        elif tok == "Q":
+            depth = max(0, depth - 1)
+            nums = []
+        elif tok == "cm" and depth == 0 and len(nums) >= 6:
+            try:
+                m = [float(v) for v in nums[-6:]]
+                # 행렬 곱 ctm = ctm × m
+                a1, b1, c1, d1, e1, f1 = ctm
+                a2, b2, c2, d2, e2, f2 = m
+                ctm = [
+                    a1*a2 + b1*c2,      a1*b2 + b1*d2,
+                    c1*a2 + d1*c2,      c1*b2 + d1*d2,
+                    e1*a2 + f1*c2 + e2, e1*b2 + f1*d2 + f2,
+                ]
+            except ValueError:
+                pass
+            nums = []
+        else:
+            nums.append(tok)
+
+    return ctm
+
+
+def _invert_ctm(m: list) -> list:
+    """2D 아핀 CTM [a b c d e f] 역행렬."""
+    a, b, c, d, e, f = m
+    det = a * d - b * c
+    if abs(det) < 1e-10:
+        return [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+    ai = d / det;  bi = -b / det
+    ci = -c / det; di = a / det
+    return [ai, bi, ci, di, -(ai*e + ci*f), -(bi*e + di*f)]
+
+
 # ── pikepdf로 이미지를 PDF 콘텐츠 스트림에 직접 삽입 ──────────────────────────
 def _embed_image_to_page(
     pdf,           # pikepdf.Pdf (open 상태)
@@ -328,33 +389,37 @@ def _embed_image_to_page(
         )
     )
 
-    # 3. 콘텐츠 스트림 조립
+    # 3. 페이지 기존 CTM 역행렬 적용 → 표준 PDF 디바이스 좌표계(y-up)에서 작업
+    page_ctm = _get_page_ctm(pdf, page_idx)
+    inv = _invert_ctm(page_ctm)
+    inv_cm = (f"{inv[0]:.6f} {inv[1]:.6f} {inv[2]:.6f} "
+              f"{inv[3]:.6f} {inv[4]:.6f} {inv[5]:.6f} cm\n")
+
     font_sz = 8.0
-    # PDF CTM이 y축 반전된 경우: y + draw_h + 4 (박스 위 raw coords) → 뷰어에서 박스 아래 표시
-    text_y = y + draw_h + 4.0
+    # 표준 y-up 좌표계에서 서명 박스 아래에 텍스트 배치
+    text_y = y - font_sz - 2.0
+    if text_y < 2.0:
+        text_y = y + 2.0
 
     safe_text = ""
     if signed_at:
         safe_text = signed_at.encode("ascii", errors="ignore").decode("ascii")
 
-    # BT/ET 는 q/Q 와 별개 블록으로 작성 (PDF spec 준수)
+    # q/Q 로 CTM 역행렬 범위 한정 → 이 블록 안은 표준 디바이스 좌표계
     parts = [
+        f"q\n{inv_cm}",
         # 박스 테두리 (남색 0.8pt)
-        f"q\n0.8 w\n0.18 0.27 0.47 RG\n"
-        f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re\nS\nQ\n",
-        # 서명 이미지 (PIL에서 수직 플립 후 저장했으므로 표준 cm 행렬 사용)
+        f"0.8 w\n0.18 0.27 0.47 RG\n"
+        f"{x:.4f} {y:.4f} {draw_w:.4f} {draw_h:.4f} re\nS\n",
+        # 서명 이미지 (PIL FLIP_TOP_BOTTOM + 표준 cm 행렬)
         f"q\n{draw_w:.4f} 0 0 {draw_h:.4f} {x:.4f} {y:.4f} cm\n/SigImg Do\nQ\n",
     ]
     if safe_text:
-        # Tm y-scale=-1: 페이지 CTM y-flip과 상쇄되어 글리프 정방향 렌더링
         parts.append(
-            f"BT\n"
-            f"/SigFont {font_sz:.1f} Tf\n"
-            f"0.25 0.25 0.45 rg\n"
-            f"1 0 0 -1 {x:.4f} {text_y:.4f} Tm\n"
-            f"({safe_text}) Tj\n"
-            f"ET\n"
+            f"BT\n/SigFont {font_sz:.1f} Tf\n0.25 0.25 0.45 rg\n"
+            f"1 0 0 1 {x:.4f} {text_y:.4f} Tm\n({safe_text}) Tj\nET\n"
         )
+    parts.append("Q\n")
 
     draw_stream = pdf.make_indirect(
         pikepdf.Stream(pdf, "".join(parts).encode())
